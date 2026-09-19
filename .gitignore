@@ -1,0 +1,5 @@
+/target/
+.omo/
+docs/superpowers/
+.DS_Store
+.env
