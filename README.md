@@ -85,9 +85,10 @@ nlgrep --help
 ## Usage
 
 ```shell
-TYPESAFE_API_KEY=ts_example_key nlgrep "select fruit" words.txt
-cat words.txt | nlgrep --json --all "select fruit"
-nlgrep --threshold 0.8 --concurrency 1 "select fruit" words.txt
+TYPESAFE_API_KEY=ts_example_key nlgrep \
+  --json --all \
+  "select lines that contain installation instructions or shell commands" \
+  README.md
 ```
 
 `QUERY` is a natural-language request. With no `FILE` arguments, `nlgrep`
@@ -120,14 +121,14 @@ Plain mode prints only matching lines. When multiple files are selected, each
 line is prefixed with its source path:
 
 ```text
-first.txt:banana
-second.txt:apple
+first.txt:Install the binary
+second.txt:Run cargo install --locked
 ```
 
 JSON mode emits one object per line:
 
 ```json
-{"file":null,"line":2,"text":"banana","matched":true,"probability":0.98}
+{"file":"README.md","line":2,"text":"Run cargo install --locked","matched":true,"probability":0.98}
 ```
 
 `file` is `null` for stdin, `line` is one-based, and `text` excludes the input
