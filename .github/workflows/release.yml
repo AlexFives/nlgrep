@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to populate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            cross: false
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            cross: false
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation toolchain
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --target "${{ matrix.target }}"
+
+      - name: Package Unix release
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+
+          artifact_tag="$(printf '%s' "$RELEASE_TAG" | tr '/ ' '--')"
+          artifact_name="nlgrep-${artifact_tag}-${TARGET}"
+          staging_dir="dist/${artifact_name}"
+
+          mkdir -p "$staging_dir"
+          cp "target/${TARGET}/release/nlgrep" "${staging_dir}/nlgrep"
+          cp README.md LICENSE "$staging_dir/"
+
+          (
+            cd dist
+            tar -czf "${artifact_name}.tar.gz" "$artifact_name"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "${artifact_name}.tar.gz" > "${artifact_name}.tar.gz.sha256"
+            else
+              shasum -a 256 "${artifact_name}.tar.gz" > "${artifact_name}.tar.gz.sha256"
+            fi
+          )
+
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $artifactTag = $env:RELEASE_TAG -replace '[^A-Za-z0-9._-]', '-'
+          $artifactName = "nlgrep-$artifactTag-$env:TARGET"
+          $stagingDir = Join-Path $PWD "dist\$artifactName"
+          $targetDir = Join-Path $PWD "target\$env:TARGET\release"
+
+          New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $targetDir 'nlgrep.exe') -Destination $stagingDir
+          Copy-Item -Path README.md -Destination $stagingDir
+          Copy-Item -Path LICENSE -Destination $stagingDir
+
+          $archiveName = "$artifactName.zip"
+          $archivePath = Join-Path $PWD "dist\$archiveName"
+          Compress-Archive -Path (Join-Path $stagingDir '*') -DestinationPath $archivePath
+
+          Push-Location (Join-Path $PWD 'dist')
+          try {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $archiveName).Hash.ToLowerInvariant()
+            "$hash  $archiveName" | Set-Content -Path "$archiveName.sha256"
+          } finally {
+            Pop-Location
+          }
+
+      - name: Upload packaged release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: nlgrep-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Attach assets to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: nlgrep-*
+          path: dist
+          merge-multiple: true
+
+      - name: Upload assets to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.zip dist/*.sha256)
+
+          if (( ${#assets[@]} == 0 )); then
+            echo 'No release assets were produced.' >&2
+            exit 1
+          fi
+
+          gh release upload "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
