@@ -115,6 +115,50 @@ the request follows the [TypeSafe HTTP API](https://docs.typesafe.ai/api).
 non-negative. The provider's batch limit, request timeout, retry policy, and
 server-side limits still apply when `--concurrency 0` is selected.
 
+## Performance
+
+These numbers are an application-pipeline baseline, not a TypeSafe model
+benchmark. The adapter was pointed at a local HTTP stub that returned a valid
+`noul = 0.9` response for every item, so network and model-inference latency
+are not included.
+
+### Historical fixed-size local baseline
+
+The benchmark used the release build at commit
+`7ad1828c745ee5cbee06fab4bd4818365fdd2acf`, Rust 1.95.0, an AMD Ryzen 9
+5950X with 8 visible CPUs, and 15 GiB of RAM. Input was UTF-8 text containing
+`record-<n>` on each newline-terminated line. It used the default batch size
+of 32, `--concurrency 4`, threshold `0.5`, plain output, and three repetitions
+per input size; the table reports the median. The harness called
+`run_with_adapter` directly, so process startup and CLI parsing are excluded.
+
+| Input lines | Local HTTP requests | Median wall time | Throughput |
+| ---: | ---: | ---: | ---: |
+| 10,240 | 320 | 91.8 ms | 111,498 lines/s |
+| 102,400 | 3,200 | 8.61 s | 11,896 lines/s |
+
+This is the pre-context-packing baseline. The current adapter fills requests
+greedily against TypeSafe's [documented 64k request and 32k
+`state`-plus-longest-question limits](https://docs.typesafe.ai/models), using a
+90% working budget and a conservative local token estimate.
+
+### Current TypeSafe API, one live run
+
+The release CLI was run once against the real TypeSafe endpoint with
+`TYPESAFE_API_KEY` supplied through the environment. The input contained the
+same `record-<n>` lines, query `contains record`, `--json --all
+--concurrency 4` was used, and stdout was redirected to `/dev/null`. The
+request count below is the number of planned batches; retries, if any, are
+included in wall time but are not counted separately.
+
+| Input lines | Planned requests | Wall time | Max RSS | Throughput |
+| ---: | ---: | ---: | ---: | ---: |
+| 10,000 | 8 | 3.95 s | 11.8 MiB | 2,532 lines/s |
+
+Treat these figures as a baseline, not as an SLA. The result projection still
+rebuilds an index over all input records for each batch, so larger inputs do
+not scale linearly.
+
 ## Output
 
 Plain mode prints only matching lines. When multiple files are selected, each

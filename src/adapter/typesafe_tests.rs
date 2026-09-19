@@ -13,6 +13,69 @@ fn request_with(items: usize) -> (Query, Vec<Candidate>) {
     (query, candidates)
 }
 
+#[test]
+fn plans_batches_from_context_budget_instead_of_fixed_item_count() {
+    let adapter =
+        TypeSafeAdapter::for_tests("http://127.0.0.1:1", "test-key").expect("adapter should build");
+    let query = Query::try_new("select fruit").expect("query should be valid");
+    let candidates = (0..10_000)
+        .map(|id| Candidate::new(CandidateId::new(id), format!("record-{id}")))
+        .collect::<Vec<_>>();
+    let request = crate::LogicalRequest {
+        query: &query,
+        items: &candidates,
+    };
+
+    let plan = adapter
+        .plan_batches(&request)
+        .expect("batch planning should succeed");
+
+    assert!(plan.ranges.first().expect("plan should not be empty").len() > 32);
+    assert!(plan.ranges.len() <= 8);
+    assert!(plan.ranges.len() < 313);
+    assert!(plan.validate(candidates.len()).is_ok());
+}
+
+#[test]
+fn starts_a_new_batch_when_the_state_budget_would_be_exceeded() {
+    let adapter =
+        TypeSafeAdapter::for_tests("http://127.0.0.1:1", "test-key").expect("adapter should build");
+    let query = Query::try_new("select fruit").expect("query should be valid");
+    let candidates = (0..3)
+        .map(|id| Candidate::new(CandidateId::new(id), "x".repeat(50_000)))
+        .collect::<Vec<_>>();
+    let request = crate::LogicalRequest {
+        query: &query,
+        items: &candidates,
+    };
+
+    let plan = adapter
+        .plan_batches(&request)
+        .expect("batch planning should succeed");
+
+    assert_eq!(plan.ranges, vec![0..1, 1..2, 2..3]);
+}
+
+#[test]
+fn uses_a_more_conservative_estimate_for_non_ascii_state() {
+    let adapter =
+        TypeSafeAdapter::for_tests("http://127.0.0.1:1", "test-key").expect("adapter should build");
+    let query = Query::try_new("select fruit").expect("query should be valid");
+    let candidates = (0..3)
+        .map(|id| Candidate::new(CandidateId::new(id), "ж".repeat(20_000)))
+        .collect::<Vec<_>>();
+    let request = crate::LogicalRequest {
+        query: &query,
+        items: &candidates,
+    };
+
+    let plan = adapter
+        .plan_batches(&request)
+        .expect("batch planning should succeed");
+
+    assert_eq!(plan.ranges, vec![0..1, 1..2, 2..3]);
+}
+
 fn success_body(items: usize) -> serde_json::Value {
     let answers = (0..items)
         .map(|index| {

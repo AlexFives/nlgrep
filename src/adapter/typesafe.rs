@@ -1,3 +1,5 @@
+#[path = "typesafe_batching.rs"]
+mod batching;
 #[path = "typesafe_wire.rs"]
 mod wire;
 
@@ -9,7 +11,6 @@ use std::{collections::BTreeMap, time::Duration};
 use tokio::time::sleep;
 
 const DEFAULT_ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
-const DEFAULT_BATCH_SIZE: usize = 32;
 const DEFAULT_RETRIES: usize = 1;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -18,7 +19,6 @@ pub struct TypeSafeConfig {
     endpoint: String,
     model: String,
     timeout: Duration,
-    max_items_per_batch: usize,
     max_retries: usize,
     initial_backoff: Duration,
 }
@@ -30,7 +30,6 @@ impl TypeSafeConfig {
             endpoint: DEFAULT_ENDPOINT.to_owned(),
             model,
             timeout,
-            max_items_per_batch: DEFAULT_BATCH_SIZE,
             max_retries: DEFAULT_RETRIES,
             initial_backoff: DEFAULT_BACKOFF,
         }
@@ -74,6 +73,15 @@ impl TypeSafeAdapter {
         Self::new(TypeSafeConfig::for_tests(endpoint, api_key))
     }
 
+    fn question(index: usize) -> wire::NoulQuestion {
+        wire::NoulQuestion {
+            kind: "noul",
+            instructions: format!(
+                "Does `items[{index}].text` satisfy the condition described by `query`?"
+            ),
+        }
+    }
+
     fn request_body<'a>(&self, request: &BatchRequest<'a>) -> wire::RequestBody<'a> {
         let items = request
             .items
@@ -86,17 +94,7 @@ impl TypeSafeAdapter {
             .items
             .iter()
             .enumerate()
-            .map(|(index, _)| {
-                (
-                    format!("item_{index}"),
-                    wire::NoulQuestion {
-                        kind: "noul",
-                        instructions: format!(
-                            "Does `items[{index}].text` satisfy the condition described by `query`?"
-                        ),
-                    },
-                )
-            })
+            .map(|(index, _)| (format!("item_{index}"), Self::question(index)))
             .collect::<BTreeMap<_, _>>();
         wire::RequestBody {
             state: wire::RequestState {
@@ -212,18 +210,22 @@ impl TypeSafeAdapter {
             },
         }
     }
+
+    fn empty_request_body<'a>(&self, query: &'a str) -> wire::RequestBody<'a> {
+        wire::RequestBody {
+            state: wire::RequestState {
+                query,
+                items: Vec::new(),
+            },
+            model: self.config.model.clone(),
+            questions: BTreeMap::new(),
+        }
+    }
 }
 
 impl ModelAdapter for TypeSafeAdapter {
     fn plan_batches(&self, request: &LogicalRequest<'_>) -> Result<BatchPlan, AdapterError> {
-        let ranges = (0..request.items.len())
-            .step_by(self.config.max_items_per_batch)
-            .map(|start| {
-                let end = (start + self.config.max_items_per_batch).min(request.items.len());
-                start..end
-            })
-            .collect();
-        Ok(BatchPlan::new(ranges))
+        batching::plan(self, request)
     }
 
     fn classify_batch<'a>(

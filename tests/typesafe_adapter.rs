@@ -82,7 +82,7 @@ async fn sends_query_items_noul_questions_and_auth_header() {
 }
 
 #[test]
-fn plans_contiguous_ranges_with_the_adapter_batch_limit() {
+fn plans_contiguous_ranges_with_the_context_budget() {
     let adapter = test_adapter_without_server();
     let query = Query::try_new("select fruit").expect("valid query");
     let candidates: Vec<_> = (0..65)
@@ -93,7 +93,7 @@ fn plans_contiguous_ranges_with_the_adapter_batch_limit() {
         items: &candidates,
     };
     let plan = adapter.plan_batches(&request).expect("plan succeeds");
-    assert_eq!(plan.ranges, vec![0..32, 32..64, 64..65]);
+    assert_eq!(plan.ranges, vec![0..65]);
 }
 
 #[tokio::test]
