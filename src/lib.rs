@@ -14,6 +14,7 @@ pub use app::{
     run_with_inputs,
 };
 pub use cli::{Cli, RunConfig};
+pub use config::ProviderConfig;
 pub use domain::{
     BatchPlan, BatchRequest, BatchResponse, Candidate, CandidateId, Judgment, LogicalRequest,
     Probability, Query,

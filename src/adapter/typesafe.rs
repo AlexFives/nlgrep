@@ -10,7 +10,7 @@ use secrecy::{ExposeSecret, SecretString};
 use std::{collections::BTreeMap, time::Duration};
 use tokio::time::sleep;
 
-const DEFAULT_ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
+pub(crate) const DEFAULT_ENDPOINT: &str = "https://api.typesafe.ai/v1/systemone";
 const DEFAULT_RETRIES: usize = 1;
 const DEFAULT_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -44,6 +44,11 @@ impl TypeSafeConfig {
         config.endpoint = format!("{}/v1/systemone", endpoint.into().trim_end_matches('/'));
         config.initial_backoff = Duration::ZERO;
         config
+    }
+
+    pub fn with_endpoint(mut self, endpoint: String) -> Self {
+        self.endpoint = endpoint;
+        self
     }
 }
 

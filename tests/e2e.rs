@@ -12,6 +12,7 @@ fn config(json_output: bool, all: bool, files: Vec<PathBuf>) -> RunConfig {
         json: json_output,
         all,
         model: "jev-latest".to_owned(),
+        provider: nlgrep::ProviderConfig::default(),
         timeout: Duration::from_secs(30),
         concurrency: 4,
         files,

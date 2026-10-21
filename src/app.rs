@@ -86,7 +86,7 @@ pub async fn run_with_inputs(
 }
 
 pub fn production_adapter(config: &RunConfig) -> Result<Box<dyn ModelAdapter>, ConfigError> {
-    production_adapter_with_key(config, env::var("TYPESAFE_API_KEY"))
+    production_adapter_with_key(config, env::var(config.provider.key_variable()))
 }
 
 fn production_adapter_with_key(

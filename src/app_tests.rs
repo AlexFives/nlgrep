@@ -76,6 +76,7 @@ fn config(json: bool) -> RunConfig {
         json,
         all: json,
         model: "jev-latest".to_owned(),
+        provider: crate::ProviderConfig::default(),
         timeout: Duration::from_secs(30),
         concurrency: 1,
         files: Vec::new(),

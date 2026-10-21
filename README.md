@@ -24,7 +24,7 @@ Archive names follow the pattern
 On Linux or macOS, select the target for your machine and run:
 
 ```shell
-VERSION=v0.1.0
+VERSION=v0.2.0
 TARGET=x86_64-unknown-linux-gnu
 ARCHIVE="nlgrep-${VERSION}-${TARGET}.tar.gz"
 RELEASES_URL="https://github.com/AlexFives/nlgrep/releases/download"
@@ -44,7 +44,7 @@ On Windows, download the matching `.zip` archive, extract it, and put the
 directory containing `nlgrep.exe` on `PATH`:
 
 ```powershell
-$Version = "v0.1.0"
+$Version = "v0.2.0"
 $Target = "x86_64-pc-windows-msvc"
 $Archive = "nlgrep-$Version-$Target.zip"
 $Url = "https://github.com/AlexFives/nlgrep/releases/download/$Version/$Archive"
@@ -95,9 +95,62 @@ TYPESAFE_API_KEY=ts_example_key nlgrep \
 reads stdin. A file argument of `-` also means stdin. Input is sent to the
 configured TypeSafe API as UTF-8 text, so do not put secrets in input files.
 
-The API key is read from `TYPESAFE_API_KEY`. The compiled-in adapter uses
-`https://api.typesafe.ai/v1/systemone` and the `jev-latest` model by default;
-the request follows the [TypeSafe HTTP API](https://docs.typesafe.ai/api).
+Without configuration, the built-in `typesafe` provider reads its key from
+`TYPESAFE_API_KEY` and uses `https://api.typesafe.ai/v1/systemone` with the
+`jev-latest` model. Requests follow the
+[TypeSafe HTTP API](https://docs.typesafe.ai/api).
+
+## Provider configuration
+
+Define named TypeSafe-compatible providers in TOML:
+
+```toml
+default_provider = "private"
+
+[providers.typesafe]
+api_key_env = "TYPESAFE_API_KEY"
+
+[providers.private]
+endpoint = "https://typesafe.example.com/v1/systemone"
+model = "jev-latest"
+api_key_env = "PRIVATE_TYPESAFE_API_KEY"
+```
+
+`endpoint` is the full URL for a System One request; no path is appended.
+Each provider defaults to the official endpoint, `jev-latest`, and the
+`TYPESAFE_API_KEY` environment variable when those fields are omitted.
+To store a key in the file, use `api_key = "your-key"` instead of
+`api_key_env`. These two settings are mutually exclusive. Keep files
+containing keys private and out of version control.
+
+Configuration is loaded in this order:
+
+1. `$XDG_CONFIG_HOME/nlgrep/config.toml`, or `~/.config/nlgrep/config.toml`
+   when `XDG_CONFIG_HOME` is unset. On Windows, the fallback is
+   `%APPDATA%\nlgrep\config.toml`.
+2. `.nlgrep.toml` in the current directory.
+
+The project file overrides `default_provider` and provider definitions with
+the same name. A provider definition is replaced as a whole; omitted fields
+use the built-in defaults. Providers with other names remain available.
+Missing automatic configuration files are ignored. Use `--config FILE` to
+read only a specific file; that file must exist.
+
+```shell
+# Use default_provider, or the built-in typesafe provider if unset.
+nlgrep "select fruit" words.txt
+
+# Select a named provider for this invocation.
+nlgrep --provider typesafe "select fruit" words.txt
+
+# Select an explicit configuration file and override the provider's model.
+nlgrep --config ./providers.toml --provider private --model jev-latest \
+  "select fruit" words.txt
+```
+
+`--provider` overrides `default_provider`, and `--model` overrides the
+selected provider's model. Unknown providers, unsupported configuration
+fields, invalid URLs, and missing or empty keys cause exit code `2`.
 
 ## Options
 
@@ -106,7 +159,9 @@ the request follows the [TypeSafe HTTP API](https://docs.typesafe.ai/api).
 | `-t, --threshold FLOAT` | `0.5` | Match when `noul` is at least the value. |
 | `-j, --json` | off | Emit JSON Lines instead of plain text. |
 | `--all` | off | Emit all lines in JSON mode, including non-matches. |
-| `--model MODEL` | `jev-latest` | TypeSafe model identifier. |
+| `--provider NAME` | `default_provider`, or `typesafe` | Named TypeSafe provider. |
+| `--config FILE` | automatic discovery | Read only this TOML configuration file. |
+| `--model MODEL` | provider's model, or `jev-latest` | Override the TypeSafe model identifier. |
 | `--timeout DURATION` | `30s` | Request timeout, e.g. `10s` or `500ms`. |
 | `--concurrency INT` | `4` | In-flight limit; `0` removes the local cap. |
 

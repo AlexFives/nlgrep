@@ -39,6 +39,30 @@ pub enum ConfigError {
     InvalidQuery(#[from] DomainError),
     #[error("TYPESAFE_API_KEY is not set")]
     MissingApiKey,
+    #[error("{0} is not set for the selected provider")]
+    MissingProviderApiKey(String),
+    #[error("API key must not be empty")]
+    EmptyApiKey,
+    #[error("model must not be empty")]
+    EmptyModel,
+    #[error("unknown provider: {0}")]
+    UnknownProvider(String),
+    #[error("invalid provider {provider}: {message}")]
+    InvalidProvider {
+        provider: String,
+        message: &'static str,
+    },
+    #[error("could not read configuration {}: {source}", path.display())]
+    ReadConfig {
+        path: std::path::PathBuf,
+        source: io::Error,
+    },
+    #[error("invalid TOML or unsupported configuration in {} at line {line}, column {column}", path.display())]
+    ParseConfig {
+        path: std::path::PathBuf,
+        line: usize,
+        column: usize,
+    },
     #[error("could not build the HTTP client: {0}")]
     HttpClient(String),
 }

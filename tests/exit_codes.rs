@@ -54,6 +54,7 @@ fn config(json: bool, all: bool) -> RunConfig {
         json,
         all,
         model: "jev-latest".to_owned(),
+        provider: nlgrep::ProviderConfig::default(),
         timeout: std::time::Duration::from_secs(30),
         concurrency: 4,
         files: Vec::new(),
